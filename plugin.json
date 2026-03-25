@@ -1,0 +1,35 @@
+{
+  "name": "hello-claude",
+  "version": "0.1.0",
+  "description": "Inter-session communication for Claude Code. Let multiple Claude instances know about each other and exchange messages.",
+  "author": "nicolascukas",
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bash \"$PLUGIN_DIR/scripts/register.sh\"",
+        "statusMessage": "Joining session registry..."
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "bash \"$PLUGIN_DIR/scripts/deregister.sh\"",
+        "statusMessage": "Leaving session registry..."
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "bash \"$PLUGIN_DIR/scripts/bridge.sh\"",
+        "statusMessage": "Scanning for active sessions..."
+      }
+    ]
+  },
+  "skills": [
+    "skills/msg.md",
+    "skills/sessions.md",
+    "skills/scope.md",
+    "skills/callsign.md"
+  ]
+}
