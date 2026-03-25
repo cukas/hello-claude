@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "cukas",
+  "description": "hello-claude — inter-session communication for Claude Code",
+  "owner": { "name": "cukas" },
+  "plugins": [
+    {
+      "name": "hello-claude",
+      "description": "Inter-session communication — let multiple Claude instances know about each other and exchange messages",
+      "version": "0.1.0",
+      "author": { "name": "cukas" },
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/cukas/hello-claude",
+      "tags": ["inter-session", "communication", "multi-session", "messaging", "claude-code-plugin"]
+    }
+  ]
+}

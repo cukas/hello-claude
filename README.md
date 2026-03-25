@@ -29,14 +29,16 @@ No daemons. No servers. Just the filesystem and Claude Code hooks.
 ## Install
 
 ```bash
-# Clone
-git clone git@github.com:cukas/hello-claude.git ~/.claude/plugins/hello-claude
-
-# Or symlink from wherever you cloned it
-ln -s /path/to/hello-claude ~/.claude/plugins/hello-claude
+# Marketplace install
+claude plugin marketplace add cukas/hello-claude
+claude plugin install hello-claude@cukas
 ```
 
-Claude Code picks up plugins from `~/.claude/plugins/` automatically.
+Or manually:
+
+```bash
+git clone git@github.com:cukas/hello-claude.git ~/.claude/plugins/hello-claude
+```
 
 ## Commands
 
