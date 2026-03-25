@@ -3,7 +3,7 @@
 Talk to another project's Claude. That's it.
 
 ```
-/hello kern-lang what's the current rule count?
+/hello my-api what endpoints handle authentication?
 ```
 
 A Claude spins up in that project, reads the code, answers your question, and you're back to work. No switching terminals.
@@ -11,17 +11,17 @@ A Claude spins up in that project, reads the code, answers your question, and yo
 ## How it works
 
 ```
-You (in kern-lang-landing):
+You (working on the frontend):
 
-> /hello kern-lang did you change the ImportDecl interface?
+> /hello my-api did you change the user response schema?
 
-[hello-claude] Asking kern-lang...
+[hello-claude] Asking my-api...
 
-Yes, ImportDecl now has a 'source' field (added in commit a3f91b2).
-The field is optional and defaults to null for backward compatibility.
+Yes, the /users endpoint now returns a 'role' field (added in commit a3f91b2).
+The field is optional and defaults to 'viewer' for backward compatibility.
 ```
 
-Under the hood: `claude -p --cwd ~/GitHub/kern-lang "your question"`. If there's a live Claude session in that project, it gets a copy of your message too.
+Under the hood: `claude -p --cwd ~/GitHub/my-api "your question"`. If there's a live Claude session in that project, it gets a copy of your message too.
 
 ## Install
 
@@ -41,8 +41,8 @@ git clone git@github.com:cukas/hello-claude.git ~/.claude/plugins/hello-claude
 Register your projects (once):
 
 ```bash
-/hello-setup kern-lang
-/hello-setup landing ~/GitHub/kern-lang-landing
+/hello-setup my-api
+/hello-setup frontend ~/projects/my-frontend
 ```
 
 If the project lives in `~/GitHub/<name>`, the path is auto-detected.
@@ -59,9 +59,9 @@ If the project lives in `~/GitHub/<name>`, the path is auto-detected.
 If you run multiple Claude Code sessions, hello-claude also tracks them. Each session auto-registers on start, and a background hook shows you who else is active:
 
 ```
-[hello-claude] You are 'kern-lang-landing'.
+[hello-claude] You are 'frontend'.
 Active sessions (1):
-  - kern-lang (~GitHub/kern-lang) — refactoring AST nodes
+  - my-api (~/GitHub/my-api) — adding OAuth2 support
 ```
 
 Extra commands for multi-session use:
@@ -82,10 +82,10 @@ export HELLO_CLAUDE_THEME=startrek
 ```
 [BRIDGE] You are 'scotty'.
 Starfleet crew (1):
-  - kirk (~/kern-lang) — refactoring warp core
+  - kirk (~/my-api) — recalibrating the warp core
 
 Incoming hails (1):
-  From kirk: the AST interface changed
+  From kirk: the dilithium crystals changed shape
 ```
 
 ## Limitations
