@@ -1,35 +1,31 @@
 # hello-claude
 
-Inter-session communication for [Claude Code](https://claude.ai/claude-code). Let multiple Claude instances know about each other and exchange messages.
+Talk to another project's Claude. That's it.
 
-You run two Claude Code sessions — one working on the compiler, one on the frontend. The frontend session needs to know the compiler changed an interface. Today, you copy-paste between terminals. With hello-claude, they just know.
+```
+/hello kern-lang what's the current rule count?
+```
+
+A Claude spins up in that project, reads the code, answers your question, and you're back to work. No switching terminals.
 
 ## How it works
 
 ```
-Terminal 1 (compiler):                    Terminal 2 (frontend):
-> /callsign compiler                      > /callsign frontend
-> /scope "refactoring AST nodes"          > /scope "updating docs pages"
+You (in kern-lang-landing):
 
-> /msg frontend "ImportDecl now           [on next prompt, automatically:]
-  has a 'source' field — update
-  your renderer"                          [hello-claude] You are 'frontend'.
-                                          Active sessions (1):
-                                            - compiler (~/kern-lang) — refactoring AST nodes
+> /hello kern-lang did you change the ImportDecl interface?
 
-                                          Messages (1):
-                                            From compiler: ImportDecl now has a 'source'
-                                            field — update your renderer
+[hello-claude] Asking kern-lang...
 
-                                          Reply with: /msg <callsign> "your reply"
+Yes, ImportDecl now has a 'source' field (added in commit a3f91b2).
+The field is optional and defaults to null for backward compatibility.
 ```
 
-No daemons. No servers. Just the filesystem and Claude Code hooks.
+Under the hood: `claude -p --cwd ~/GitHub/kern-lang "your question"`. If there's a live Claude session in that project, it gets a copy of your message too.
 
 ## Install
 
 ```bash
-# Marketplace install
 claude plugin marketplace add cukas/hello-claude
 claude plugin install hello-claude@cukas
 ```
@@ -40,41 +36,42 @@ Or manually:
 git clone git@github.com:cukas/hello-claude.git ~/.claude/plugins/hello-claude
 ```
 
+## Setup
+
+Register your projects (once):
+
+```bash
+/hello-setup kern-lang
+/hello-setup landing ~/GitHub/kern-lang-landing
+```
+
+If the project lives in `~/GitHub/<name>`, the path is auto-detected.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/msg <callsign> "text"` | Send a message to another session |
-| `/sessions` | List all active sessions |
-| `/scope "description"` | Set what this session is working on |
-| `/callsign <name>` | Rename this session |
+| `/hello <project> <message>` | Ask another project's Claude something |
+| `/hello-setup <name> [path]` | Register a project |
 
-## What happens automatically
+## Bonus: session awareness
 
-- **On session start** — registers in the session registry with a callsign (defaults to your directory name)
-- **On every prompt** — scans for other active sessions and checks your inbox. If there's something to report, it injects context so Claude naturally knows about it
-- **On session end** — deregisters cleanly
-
-## How Claude uses it
-
-Once hello-claude is active, Claude sees other sessions in its context. This means it can:
-
-- Tell you "there's a compiler session active — want me to ask them about the rule count?"
-- See incoming messages and act on them ("the compiler says ImportDecl changed, let me update the renderer")
-- Suggest sending a message when it makes a change that affects another session's work
-
-You stay in the loop — Claude proposes, you decide.
-
-## Data
-
-Everything lives in `~/.claude/hello-claude/`:
+If you run multiple Claude Code sessions, hello-claude also tracks them. Each session auto-registers on start, and a background hook shows you who else is active:
 
 ```
-sessions/          # One JSON file per active session
-inbox/<callsign>/  # Incoming messages per session
+[hello-claude] You are 'kern-lang-landing'.
+Active sessions (1):
+  - kern-lang (~GitHub/kern-lang) — refactoring AST nodes
 ```
 
-Messages are moved to `inbox/<callsign>/.read/` after being displayed. Sessions are cleaned up automatically when their process dies.
+Extra commands for multi-session use:
+
+| Command | What it does |
+|---|---|
+| `/msg <session> "text"` | Send a message to a live session's inbox |
+| `/sessions` | List active sessions |
+| `/scope "text"` | Describe what you're working on |
+| `/callsign <name>` | Rename your session |
 
 ## Easter egg
 
@@ -88,14 +85,13 @@ Starfleet crew (1):
   - kirk (~/kern-lang) — refactoring warp core
 
 Incoming hails (1):
-  From kirk: beam me up, the AST interface changed
+  From kirk: the AST interface changed
 ```
 
 ## Limitations
 
-- **Pull-based, not push.** The receiving session sees messages on its next user interaction (when the hook fires). There's no way to interrupt a running Claude session from outside.
-- **One human in the loop.** Claude can't autonomously respond to messages — you trigger each session by typing in that terminal. This is by design.
-- **Callsign collisions.** If two sessions share a directory name, the second one gets a suffix appended. Use `/callsign` to set meaningful names.
+- **The spawned Claude is ephemeral.** It reads the project fresh each time — it doesn't have the context of a long-running session. For complex back-and-forth, use `/msg` with a live session instead.
+- **Live session messages are pull-based.** The other session sees your `/msg` on their next interaction, not instantly.
 
 ## License
 
