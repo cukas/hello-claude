@@ -19,12 +19,13 @@ if [[ ! -f "$SESSION_FILE" ]]; then
 fi
 
 python3 -c "
-import json
+import json, sys
+scope = sys.stdin.read().strip()
 with open('${SESSION_FILE}', 'r') as f:
     data = json.load(f)
-data['scope'] = '''${SCOPE}'''
+data['scope'] = scope
 with open('${SESSION_FILE}', 'w') as f:
     json.dump(data, f, indent=2)
-"
+" <<< "$SCOPE"
 
 echo "Scope updated: ${SCOPE}"

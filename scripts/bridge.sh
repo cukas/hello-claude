@@ -4,6 +4,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
+# Read hook input from stdin (captures session_id)
+hc_read_hook_input
+
 # Clean stale sessions
 hc_cleanup_stale
 
@@ -15,14 +18,14 @@ MSG_LABEL="$(hc_label_message)"
 # Update last_seen timestamp
 SESSION_FILE="${HC_SESSIONS}/${CALLSIGN}.json"
 if [[ -f "$SESSION_FILE" ]]; then
-  python3 -c "
+  python3 << PYEOF
 import json, datetime
-with open('${SESSION_FILE}', 'r') as f:
+with open("${SESSION_FILE}", "r") as f:
     data = json.load(f)
-data['last_seen'] = datetime.datetime.now().isoformat()
-with open('${SESSION_FILE}', 'w') as f:
+data["last_seen"] = datetime.datetime.now().isoformat()
+with open("${SESSION_FILE}", "w") as f:
     json.dump(data, f, indent=2)
-" 2>/dev/null || true
+PYEOF
 fi
 
 # ── Collect active sessions ──────────────────────────────────────────────────
@@ -31,13 +34,13 @@ count=0
 for f in "$HC_SESSIONS"/*.json; do
   [[ -f "$f" ]] || continue
   info="$(python3 -c "
-import json
+import json, os
 with open('$f') as fh:
     d = json.load(fh)
 if d['callsign'] != '${CALLSIGN}':
-    scope = f\" — {d['scope']}\" if d.get('scope') else ''
-    cwd_short = d['cwd'].replace('$HOME', '~')
-    print(f\"  - {d['callsign']} ({cwd_short}){scope}\")
+    scope = f' — {d[\"scope\"]}' if d.get('scope') else ''
+    cwd_short = d['cwd'].replace(os.path.expanduser('~'), '~')
+    print(f'  - {d[\"callsign\"]} ({cwd_short}){scope}')
 " 2>/dev/null || true)"
   if [[ -n "$info" ]]; then
     others="${others}${info}\n"
@@ -56,7 +59,7 @@ if [[ -d "$inbox_dir" ]]; then
 import json
 with open('$msg_file') as fh:
     m = json.load(fh)
-print(f\"  From {m['from']}: {m['body']}\")
+print(f'  From {m[\"from\"]}: {m[\"body\"]}')
 " 2>/dev/null || true)"
     if [[ -n "$msg_info" ]]; then
       messages="${messages}${msg_info}\n"

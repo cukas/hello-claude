@@ -44,17 +44,18 @@ MSG_ID="$(date +%s)-${RANDOM}"
 MSG_FILE="${TARGET_INBOX}/${MSG_ID}.json"
 
 python3 -c "
-import json, datetime
+import json, datetime, sys
+body = sys.stdin.read().strip()
 msg = {
     'id': '${MSG_ID}',
     'from': '${FROM}',
     'to': '${TARGET}',
-    'body': $(python3 -c "import json; print(json.dumps('${BODY}'))"),
+    'body': body,
     'reply_to': '${REPLY_TO}' if '${REPLY_TO}' else None,
     'timestamp': datetime.datetime.now().isoformat()
 }
 with open('${MSG_FILE}', 'w') as f:
     json.dump(msg, f, indent=2)
-"
+" <<< "$BODY"
 
 echo "${SEND_LABEL} ${TARGET}: message delivered. They'll see it on their next prompt."

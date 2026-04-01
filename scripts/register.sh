@@ -3,6 +3,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
+# Read hook input from stdin (captures session_id)
+hc_read_hook_input
+
 # Clean up stale sessions first
 hc_cleanup_stale
 
@@ -10,11 +13,11 @@ CALLSIGN="$(hc_callsign)"
 SID="$(hc_session_id)"
 SESSION_FILE="${HC_SESSIONS}/${CALLSIGN}.json"
 
-# If callsign already taken by a live session, append a suffix
+# If callsign already taken by a different session, append a suffix
 if [[ -f "$SESSION_FILE" ]]; then
-  existing_pid="$(python3 -c "import json; print(json.load(open('$SESSION_FILE'))['pid'])" 2>/dev/null || echo "")"
-  if [[ -n "$existing_pid" ]] && hc_is_pid_alive "$existing_pid"; then
-    # Name collision — append short hash
+  existing_sid="$(python3 -c "import json; print(json.load(open('$SESSION_FILE')).get('session_id',''))" 2>/dev/null || echo "")"
+  if [[ "$existing_sid" != "$SID" ]]; then
+    # Name collision with a different session — append short hash
     CALLSIGN="${CALLSIGN}-${SID:0:6}"
     hc_set_callsign "$CALLSIGN"
     SESSION_FILE="${HC_SESSIONS}/${CALLSIGN}.json"
@@ -24,21 +27,20 @@ fi
 # Ensure inbox exists
 mkdir -p "${HC_INBOX}/${CALLSIGN}"
 
-# Write session file
-python3 -c "
+# Write session file — pass values via stdin to avoid shell injection
+python3 << PYEOF
 import json, os, datetime
 data = {
-    'callsign': '${CALLSIGN}',
-    'session_id': '${SID}',
-    'pid': ${HC_PID:-${PPID}},
-    'cwd': os.getcwd(),
-    'scope': '',
-    'started': datetime.datetime.now().isoformat(),
-    'last_seen': datetime.datetime.now().isoformat()
+    "callsign": "${CALLSIGN}",
+    "session_id": "${SID}",
+    "cwd": os.getcwd(),
+    "scope": "",
+    "started": datetime.datetime.now().isoformat(),
+    "last_seen": datetime.datetime.now().isoformat()
 }
-with open('${SESSION_FILE}', 'w') as f:
+with open("${SESSION_FILE}", "w") as f:
     json.dump(data, f, indent=2)
-"
+PYEOF
 
 # Output for SessionStart hook — tells Claude about the registration
 PREFIX="$(hc_label_prefix)"
