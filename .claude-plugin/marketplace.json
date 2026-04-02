@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "cukas",
+  "name": "cukas-hello-claude",
   "description": "hello-claude — inter-session communication for Claude Code",
   "owner": { "name": "cukas" },
   "plugins": [
