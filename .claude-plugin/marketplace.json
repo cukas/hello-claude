@@ -7,7 +7,7 @@
     {
       "name": "hello-claude",
       "description": "Inter-session communication — let multiple Claude instances know about each other and exchange messages",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "author": { "name": "cukas" },
       "source": "./",
       "category": "development",
