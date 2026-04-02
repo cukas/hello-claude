@@ -20,13 +20,13 @@ if [[ -z "$TARGET" ]] || [[ -z "$MESSAGE" ]]; then
   # List known projects
   echo "Known projects:" >&2
   if [[ -f "${HC_DATA}/projects.json" ]]; then
-    python3 -c "
-import json
-with open('${HC_DATA}/projects.json') as f:
-    projects = json.load(f)
-for name, path in projects.items():
-    print(f'  {name} -> {path}')
-" 2>/dev/null
+    node -e "
+      const fs = require('fs');
+      try {
+        const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+        for (const [name, path] of Object.entries(p)) console.log('  ' + name + ' -> ' + path);
+      } catch {}
+    " "${HC_DATA}/projects.json" 2>/dev/null
   else
     echo "  (none configured — run /hello-setup to add projects)" >&2
   fi
@@ -38,12 +38,13 @@ PROJECT_PATH=""
 
 # 1. Check projects.json config
 if [[ -f "${HC_DATA}/projects.json" ]]; then
-  PROJECT_PATH="$(python3 -c "
-import json
-with open('${HC_DATA}/projects.json') as f:
-    projects = json.load(f)
-print(projects.get('${TARGET}', ''))
-" 2>/dev/null || true)"
+  PROJECT_PATH="$(node -e "
+    const fs = require('fs');
+    try {
+      const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      console.log(p[process.argv[2]] || '');
+    } catch { console.log(''); }
+  " "${HC_DATA}/projects.json" "$TARGET" 2>/dev/null || true)"
 fi
 
 # 2. Fallback: try ~/GitHub/<target>
@@ -57,21 +58,28 @@ if [[ -z "$PROJECT_PATH" ]] || [[ ! -d "$PROJECT_PATH" ]]; then
   exit 1
 fi
 
-# Check if there's a live session for this project — route to inbox
-for f in "$HC_SESSIONS"/*.json; do
-  [[ -f "$f" ]] || continue
-  session_cwd="$(python3 -c "import json; print(json.load(open('$f'))['cwd'])" 2>/dev/null || true)"
-  if [[ "$session_cwd" == "$PROJECT_PATH" ]]; then
-    session_name="$(python3 -c "import json; print(json.load(open('$f'))['callsign'])" 2>/dev/null || true)"
-    session_pid="$(python3 -c "import json; print(json.load(open('$f'))['pid'])" 2>/dev/null || true)"
-    if ps -p "$session_pid" > /dev/null 2>&1; then
-      # Live session — send to inbox AND spawn immediate response
-      bash "${SCRIPT_DIR}/send.sh" "$session_name" "$MESSAGE" 2>/dev/null || true
-      echo "[hello-claude] Message also sent to live session '${session_name}' — they'll see it on next prompt."
-      echo ""
-    fi
-  fi
-done
+# Check if there's a live session for this project — single node call
+live_callsign="$(node -e "
+  const fs = require('fs'), path = require('path');
+  const sessDir = process.argv[1], projPath = process.argv[2];
+  for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith('.json'))) {
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(sessDir, f), 'utf8'));
+      if (d.cwd === projPath && d.pid) {
+        // Check if process is still alive
+        try { process.kill(d.pid, 0); console.log(d.callsign); process.exit(0); }
+        catch {}
+      }
+    } catch {}
+  }
+  console.log('');
+" "$HC_SESSIONS" "$PROJECT_PATH" 2>/dev/null || true)"
+
+if [[ -n "$live_callsign" ]]; then
+  bash "${SCRIPT_DIR}/send.sh" "$live_callsign" "$MESSAGE" 2>/dev/null || true
+  echo "[hello-claude] Message also sent to live session '${live_callsign}' — they'll see it on next prompt."
+  echo ""
+fi
 
 # Spawn a Claude to answer immediately
 echo "[hello-claude] Asking ${TARGET}..."

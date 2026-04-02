@@ -32,23 +32,15 @@ PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
 
 # Load or create projects.json
 PROJECTS_FILE="${HC_DATA}/projects.json"
-if [[ -f "$PROJECTS_FILE" ]]; then
-  python3 -c "
-import json
-with open('${PROJECTS_FILE}') as f:
-    projects = json.load(f)
-projects['${NAME}'] = '${PROJECT_PATH}'
-with open('${PROJECTS_FILE}', 'w') as f:
-    json.dump(projects, f, indent=2)
-"
-else
-  python3 -c "
-import json
-projects = {'${NAME}': '${PROJECT_PATH}'}
-with open('${PROJECTS_FILE}', 'w') as f:
-    json.dump(projects, f, indent=2)
-"
-fi
+
+node -e "
+  const fs = require('fs');
+  const file = process.argv[1], name = process.argv[2], projPath = process.argv[3];
+  let projects = {};
+  try { projects = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  projects[name] = projPath;
+  fs.writeFileSync(file, JSON.stringify(projects, null, 2));
+" "$PROJECTS_FILE" "$NAME" "$PROJECT_PATH"
 
 echo "Registered: ${NAME} -> ${PROJECT_PATH}"
 echo "Now you can: /hello ${NAME} what's the status?"

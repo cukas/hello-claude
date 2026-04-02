@@ -18,14 +18,11 @@ if [[ ! -f "$SESSION_FILE" ]]; then
   exit 1
 fi
 
-python3 -c "
-import json, sys
-scope = sys.stdin.read().strip()
-with open('${SESSION_FILE}', 'r') as f:
-    data = json.load(f)
-data['scope'] = scope
-with open('${SESSION_FILE}', 'w') as f:
-    json.dump(data, f, indent=2)
-" <<< "$SCOPE"
+node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+  data.scope = process.argv[2];
+  fs.writeFileSync(process.argv[1], JSON.stringify(data, null, 2));
+" "$SESSION_FILE" "$SCOPE"
 
 echo "Scope updated: ${SCOPE}"

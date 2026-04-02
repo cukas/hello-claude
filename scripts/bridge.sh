@@ -4,91 +4,102 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
-# Read hook input from stdin (captures session_id)
+# Read hook input from stdin (captures session_id + writes PPID mapping)
 hc_read_hook_input
 
-# Clean stale sessions
-hc_cleanup_stale
-
 CALLSIGN="$(hc_callsign)"
-PREFIX="$(hc_label_prefix)"
-SESSIONS_LABEL="$(hc_label_sessions)"
-MSG_LABEL="$(hc_label_message)"
+SID="$(hc_session_id)"
 
-# Update last_seen timestamp
-SESSION_FILE="${HC_SESSIONS}/${CALLSIGN}.json"
-if [[ -f "$SESSION_FILE" ]]; then
-  python3 << PYEOF
-import json, datetime
-with open("${SESSION_FILE}", "r") as f:
-    data = json.load(f)
-data["last_seen"] = datetime.datetime.now().isoformat()
-with open("${SESSION_FILE}", "w") as f:
-    json.dump(data, f, indent=2)
-PYEOF
-fi
+# Single node call for: cleanup, last_seen update, session list, inbox
+exec node - "$HC_SESSIONS" "$HC_INBOX" "$HC_DATA" "$CALLSIGN" "$SID" "$HC_THEME" <<'JSEOF'
+const fs = require("fs"), path = require("path"), os = require("os");
+const [sessDir, inboxDir, dataDir, myCallsign, mySid, theme] = process.argv.slice(2);
+const now = Date.now(), stale = 1800_000, home = os.homedir();
 
-# ── Collect active sessions ──────────────────────────────────────────────────
-others=""
-count=0
-for f in "$HC_SESSIONS"/*.json; do
-  [[ -f "$f" ]] || continue
-  info="$(python3 -c "
-import json, os
-with open('$f') as fh:
-    d = json.load(fh)
-if d['callsign'] != '${CALLSIGN}':
-    scope = f' — {d[\"scope\"]}' if d.get('scope') else ''
-    cwd_short = d['cwd'].replace(os.path.expanduser('~'), '~')
-    print(f'  - {d[\"callsign\"]} ({cwd_short}){scope}')
-" 2>/dev/null || true)"
-  if [[ -n "$info" ]]; then
-    others="${others}${info}\n"
-    count=$((count + 1))
-  fi
-done
+// Theme labels
+const [prefix, sessLabel, msgLabel] = theme === "startrek"
+  ? ["BRIDGE", "Starfleet crew", "Incoming hail"]
+  : ["hello-claude", "Active sessions", "Message"];
 
-# ── Collect inbox messages ───────────────────────────────────────────────────
-inbox_dir="${HC_INBOX}/${CALLSIGN}"
-messages=""
-msg_count=0
-if [[ -d "$inbox_dir" ]]; then
-  for msg_file in "$inbox_dir"/*.json; do
-    [[ -f "$msg_file" ]] || continue
-    msg_info="$(python3 -c "
-import json
-with open('$msg_file') as fh:
-    m = json.load(fh)
-print(f'  From {m[\"from\"]}: {m[\"body\"]}')
-" 2>/dev/null || true)"
-    if [[ -n "$msg_info" ]]; then
-      messages="${messages}${msg_info}\n"
-      msg_count=$((msg_count + 1))
-    fi
-    # Mark as read by moving to .read/
-    mkdir -p "${inbox_dir}/.read"
-    mv "$msg_file" "${inbox_dir}/.read/" 2>/dev/null || true
-  done
-fi
+// ── Cleanup stale sessions (no orphan callsign cleanup on hot path) ─────────
+for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith(".json"))) {
+  const fp = path.join(sessDir, f);
+  try {
+    const d = JSON.parse(fs.readFileSync(fp, "utf8"));
+    const age = now - new Date(d.last_seen).getTime();
+    if (isNaN(age) || age > stale) {
+      const sid = d.session_id || "";
+      if (sid) {
+        try { fs.unlinkSync(path.join(dataDir, `.callsign-${sid}`)); } catch {}
+        for (const p of fs.readdirSync(dataDir).filter(x => x.startsWith(".session-ppid-"))) {
+          try {
+            if (fs.readFileSync(path.join(dataDir, p), "utf8").trim() === sid)
+              fs.unlinkSync(path.join(dataDir, p));
+          } catch {}
+        }
+      }
+      fs.unlinkSync(fp);
+    }
+  } catch {}
+}
 
-# ── Build output ─────────────────────────────────────────────────────────────
-# Only emit if there's something to report
-if [[ $count -eq 0 ]] && [[ $msg_count -eq 0 ]]; then
-  exit 0
-fi
+// ── Update last_seen (find by session_id, not callsign filename) ────────────
+for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith(".json"))) {
+  const fp = path.join(sessDir, f);
+  try {
+    const d = JSON.parse(fs.readFileSync(fp, "utf8"));
+    if (d.session_id === mySid) {
+      d.last_seen = new Date().toISOString();
+      fs.writeFileSync(fp, JSON.stringify(d, null, 2));
+      break;
+    }
+  } catch {}
+}
 
-output="[${PREFIX}] You are '${CALLSIGN}'."
+// ── Collect other active sessions ───────────────────────────────────────────
+const others = [];
+for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith(".json"))) {
+  try {
+    const d = JSON.parse(fs.readFileSync(path.join(sessDir, f), "utf8"));
+    if (d.callsign !== myCallsign) {
+      const cwd = d.cwd.replace(home, "~");
+      const scope = d.scope ? ` — ${d.scope}` : "";
+      others.push(`  - ${d.callsign} (${cwd})${scope}`);
+    }
+  } catch {}
+}
 
-if [[ $count -gt 0 ]]; then
-  output="${output}\n${SESSIONS_LABEL} (${count}):\n${others}"
-fi
+// ── Collect inbox messages ──────────────────────────────────────────────────
+const myInbox = path.join(inboxDir, myCallsign);
+const messages = [];
+try {
+  for (const f of fs.readdirSync(myInbox).filter(f => f.endsWith(".json"))) {
+    const fp = path.join(myInbox, f);
+    try {
+      const m = JSON.parse(fs.readFileSync(fp, "utf8"));
+      messages.push(`  From ${m.from}: ${m.body}`);
+      const readDir = path.join(myInbox, ".read");
+      fs.mkdirSync(readDir, { recursive: true });
+      fs.renameSync(fp, path.join(readDir, f));
+    } catch {}
+  }
+} catch {}
 
-if [[ $msg_count -gt 0 ]]; then
-  output="${output}\n${MSG_LABEL}s (${msg_count}):\n${messages}"
-  output="${output}\nReply with: /msg <callsign> \"your reply\""
-fi
+// ── Build output ────────────────────────────────────────────────────────────
+if (!others.length && !messages.length) process.exit(0);
 
-# Escape for JSON
-json_output="$(echo -e "$output" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")"
+let output = `[${prefix}] You are '${myCallsign}'.`;
+if (others.length)
+  output += `\n${sessLabel} (${others.length}):\n${others.join("\n")}`;
+if (messages.length) {
+  output += `\n${msgLabel}s (${messages.length}):\n${messages.join("\n")}`;
+  output += `\nReply with: /msg <callsign> "your reply"`;
+}
 
-echo "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":${json_output}}}"
+console.log(JSON.stringify({
+  hookSpecificOutput: {
+    hookEventName: "UserPromptSubmit",
+    additionalContext: output
+  }
+}));
+JSEOF

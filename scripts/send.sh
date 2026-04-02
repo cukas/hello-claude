@@ -33,7 +33,6 @@ if [[ ! -f "${HC_SESSIONS}/${TARGET}.json" ]]; then
 fi
 
 FROM="$(hc_callsign)"
-PREFIX="$(hc_label_prefix)"
 SEND_LABEL="$(hc_label_send)"
 
 # Create message
@@ -43,19 +42,17 @@ mkdir -p "$TARGET_INBOX"
 MSG_ID="$(date +%s)-${RANDOM}"
 MSG_FILE="${TARGET_INBOX}/${MSG_ID}.json"
 
-python3 -c "
-import json, datetime, sys
-body = sys.stdin.read().strip()
-msg = {
-    'id': '${MSG_ID}',
-    'from': '${FROM}',
-    'to': '${TARGET}',
-    'body': body,
-    'reply_to': '${REPLY_TO}' if '${REPLY_TO}' else None,
-    'timestamp': datetime.datetime.now().isoformat()
-}
-with open('${MSG_FILE}', 'w') as f:
-    json.dump(msg, f, indent=2)
-" <<< "$BODY"
+node -e "
+  const fs = require('fs');
+  const msg = {
+    id: process.argv[1],
+    from: process.argv[2],
+    to: process.argv[3],
+    body: process.argv[4],
+    reply_to: process.argv[5] || null,
+    timestamp: new Date().toISOString()
+  };
+  fs.writeFileSync(process.argv[6], JSON.stringify(msg, null, 2));
+" "$MSG_ID" "$FROM" "$TARGET" "$BODY" "$REPLY_TO" "$MSG_FILE"
 
 echo "${SEND_LABEL} ${TARGET}: message delivered. They'll see it on their next prompt."

@@ -9,35 +9,30 @@ CALLSIGN="$(hc_callsign)"
 PREFIX="$(hc_label_prefix)"
 SESSIONS_LABEL="$(hc_label_sessions)"
 
-count=0
-output=""
-for f in "$HC_SESSIONS"/*.json; do
-  [[ -f "$f" ]] || continue
-  info="$(python3 -c "
-import json, datetime, os
-with open('$f') as fh:
-    d = json.load(fh)
-me = ' (you)' if d['callsign'] == '${CALLSIGN}' else ''
-scope = f' — {d[\"scope\"]}' if d.get('scope') else ''
-cwd_short = d['cwd'].replace(os.path.expanduser('~'), '~')
-last = datetime.datetime.fromisoformat(d['last_seen'])
-age = (datetime.datetime.now() - last).total_seconds()
-if age < 60:
-    ago = 'just now'
-elif age < 3600:
-    ago = f'{int(age/60)}m ago'
-else:
-    ago = f'{int(age/3600)}h ago'
-print(f'  {d[\"callsign\"]}{me} | {cwd_short}{scope} | last seen {ago}')
-" 2>/dev/null || true)"
-  if [[ -n "$info" ]]; then
-    output="${output}${info}\n"
-    count=$((count + 1))
-  fi
-done
+output="$(node -e "
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const sessDir = process.argv[1], myCallsign = process.argv[2];
+  const home = os.homedir(), now = Date.now();
+  const lines = [];
+  for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith('.json'))) {
+    try {
+      const d = JSON.parse(fs.readFileSync(path.join(sessDir, f), 'utf8'));
+      const me = d.callsign === myCallsign ? ' (you)' : '';
+      const scope = d.scope ? ' — ' + d.scope : '';
+      const cwd = d.cwd.replace(home, '~');
+      const age = (now - new Date(d.last_seen).getTime()) / 1000;
+      const ago = isNaN(age) ? 'unknown' : age < 60 ? 'just now' : age < 3600 ? Math.floor(age/60) + 'm ago' : Math.floor(age/3600) + 'h ago';
+      lines.push('  ' + d.callsign + me + ' | ' + cwd + scope + ' | last seen ' + ago);
+    } catch {}
+  }
+  if (!lines.length) { console.log('__EMPTY__'); }
+  else { console.log(lines.join('\n')); }
+" "$HC_SESSIONS" "$CALLSIGN" 2>/dev/null)"
 
-if [[ $count -eq 0 ]]; then
+if [[ "$output" == "__EMPTY__" ]]; then
   echo "[${PREFIX}] No active sessions."
 else
-  echo -e "[${PREFIX}] ${SESSIONS_LABEL} (${count}):\n${output}"
+  count="$(echo "$output" | wc -l | tr -d ' ')"
+  echo "[${PREFIX}] ${SESSIONS_LABEL} (${count}):"
+  echo "$output"
 fi

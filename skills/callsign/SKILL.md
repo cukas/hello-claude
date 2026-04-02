@@ -21,14 +21,12 @@ mv "$HC_SESSIONS/$OLD.json" "$HC_SESSIONS/<new-name>.json" 2>/dev/null || true
 # Rename inbox
 mv "$HC_INBOX/$OLD" "$HC_INBOX/<new-name>" 2>/dev/null || true
 # Update callsign in session file
-python3 -c "
-import json
-with open('$HC_SESSIONS/<new-name>.json', 'r') as f:
-    data = json.load(f)
-data['callsign'] = '<new-name>'
-with open('$HC_SESSIONS/<new-name>.json', 'w') as f:
-    json.dump(data, f, indent=2)
-"
+node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+  data.callsign = process.argv[2];
+  fs.writeFileSync(process.argv[1], JSON.stringify(data, null, 2));
+" "$HC_SESSIONS/<new-name>.json" "<new-name>"
 ```
 
 2. Confirm to user: "Callsign changed to '<new-name>'"

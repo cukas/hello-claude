@@ -48,7 +48,10 @@ hc_read_hook_input() {
     export HC_HOOK_INPUT
     if [[ -n "$HC_HOOK_INPUT" ]]; then
       local sid
-      sid="$(echo "$HC_HOOK_INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('session_id',''))" 2>/dev/null || echo "")"
+      sid="$(echo "$HC_HOOK_INPUT" | node -e "
+        let d=''; process.stdin.on('data',c=>d+=c);
+        process.stdin.on('end',()=>{try{console.log(JSON.parse(d).session_id||'')}catch{console.log('')}});
+      " 2>/dev/null || echo "")"
       if [[ -n "$sid" ]]; then
         export HC_SESSION_ID="$sid"
         # Persist mapping so non-hook scripts (skills) can find it via PPID
@@ -108,35 +111,42 @@ hc_set_callsign() {
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 # Clean stale sessions (last_seen older than 30 min)
 hc_cleanup_stale() {
-  local stale_seconds=1800
-  local now
-  now="$(date +%s)"
-  for f in "$HC_SESSIONS"/*.json; do
-    [[ -f "$f" ]] || continue
-    local last_seen_ts
-    last_seen_ts="$(python3 -c "
-import json, datetime
-with open('$f') as fh:
-    d = json.load(fh)
-ls = datetime.datetime.fromisoformat(d['last_seen'])
-print(int(ls.timestamp()))
-" 2>/dev/null || echo "0")"
-    if (( now - last_seen_ts > stale_seconds )); then
-      # Clean up associated callsign + mapping files
-      local sid
-      sid="$(python3 -c "import json; print(json.load(open('$f')).get('session_id',''))" 2>/dev/null || echo "")"
-      [[ -n "$sid" ]] && rm -f "${HC_DATA}/.callsign-${sid}"
-      rm -f "$f"
-    fi
-  done
+  node - "$HC_SESSIONS" "$HC_DATA" <<'JSEOF'
+const fs = require("fs"), path = require("path");
+const [sessDir, dataDir] = process.argv.slice(2);
+const now = Date.now(), stale = 1800_000;
+const active = new Set();
 
-  # Clean orphaned callsign files (no matching session)
-  for cf in "$HC_DATA"/.callsign-*; do
-    [[ -f "$cf" ]] || continue
-    local callsign
-    callsign="$(cat "$cf")"
-    if [[ ! -f "${HC_SESSIONS}/${callsign}.json" ]]; then
-      rm -f "$cf"
-    fi
-  done
+// Clean stale sessions
+for (const f of fs.readdirSync(sessDir).filter(f => f.endsWith(".json"))) {
+  const fp = path.join(sessDir, f);
+  try {
+    const d = JSON.parse(fs.readFileSync(fp, "utf8"));
+    const age = now - new Date(d.last_seen).getTime();
+    if (isNaN(age) || age > stale) {
+      const sid = d.session_id || "";
+      if (sid) {
+        try { fs.unlinkSync(path.join(dataDir, `.callsign-${sid}`)); } catch {}
+        for (const p of fs.readdirSync(dataDir).filter(f => f.startsWith(".session-ppid-"))) {
+          try {
+            if (fs.readFileSync(path.join(dataDir, p), "utf8").trim() === sid)
+              fs.unlinkSync(path.join(dataDir, p));
+          } catch {}
+        }
+      }
+      fs.unlinkSync(fp);
+    } else {
+      active.add(d.callsign || "");
+    }
+  } catch {}
+}
+
+// Clean orphaned callsign files
+for (const f of fs.readdirSync(dataDir).filter(f => f.startsWith(".callsign-"))) {
+  try {
+    const callsign = fs.readFileSync(path.join(dataDir, f), "utf8").trim();
+    if (!active.has(callsign)) fs.unlinkSync(path.join(dataDir, f));
+  } catch {}
+}
+JSEOF
 }
